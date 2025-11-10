@@ -1,5 +1,9 @@
 # Tech-Support System
 
+[![CI](https://github.com/YOUR_ORG/tech-support/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/tech-support/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=tech-support&metric=alert_status)](https://sonarcloud.io/dashboard?id=tech-support)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=tech-support&metric=coverage)](https://sonarcloud.io/dashboard?id=tech-support)
+
 > **Для разработчиков**: См. подробную информацию по настройке в `docs/spring-modulith-2.0-setup-guide.md`
 
 ## Обзор проекта

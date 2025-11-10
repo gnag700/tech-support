@@ -11,6 +11,7 @@ flyway = "11.1.0"
 # Testing
 junit = "5.11.3"
 testcontainers = "1.20.4"
+snakeyaml = "2.3"
 
 # Observability
 micrometer = "1.14.2"
@@ -47,6 +48,7 @@ flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql
 testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter" }
+snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
 
 # Observability
 micrometer-registry-prometheus = { module = "io.micrometer:micrometer-registry-prometheus", version.ref = "micrometer" }

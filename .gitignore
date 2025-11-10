@@ -24,3 +24,7 @@ Thumbs.db
 # Application
 application-local.yml
 application-secrets.yml
+
+# Documentation and BMAD
+docs/
+bmad/

@@ -4,6 +4,7 @@ plugins {
   alias(libs.plugins.spring.dependency.management)
   alias(libs.plugins.spotless)
   id 'jacoco'
+  id 'org.sonarqube' version '6.0.1.5171'
   id 'org.flywaydb.flyway' version '11.1.0'
 }
 
@@ -62,6 +63,7 @@ dependencies {
   testImplementation libs.spring.modulith.starter.test
   testImplementation(platform(libs.testcontainers.bom))
   testImplementation libs.bundles.testcontainers
+  testImplementation libs.snakeyaml
 }
 
 tasks.named('test') {
@@ -112,4 +114,18 @@ flyway {
   user = project.findProperty('flyway.user') ?: 'techsupport_user'
   password = project.findProperty('flyway.password') ?: 'password'
   locations = ['classpath:db/migration']
+}
+
+sonar {
+  properties {
+    property 'sonar.projectKey', 'tech-support'
+    property 'sonar.projectName', 'Tech Support System'
+    property 'sonar.host.url', 'https://sonarcloud.io'
+    property 'sonar.token', System.getenv('SONAR_TOKEN')
+    property 'sonar.coverage.jacoco.xmlReportPaths', 'build/reports/jacoco/test/jacocoTestReport.xml'
+    property 'sonar.java.coveragePlugin', 'jacoco'
+    property 'sonar.junit.reportPaths', 'build/test-results/test'
+    property 'sonar.sources', 'src/main/java'
+    property 'sonar.tests', 'src/test/java'
+  }
 }
