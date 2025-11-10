@@ -1,0 +1,95 @@
+# generated: 2025-11-10
+# project: tech-support
+# project_key: tech-support
+# tracking_system: file-system
+# story_location: {project-root}/docs/stories
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic exists in epic file but not contexted
+#   - contexted: Epic tech context created (required before drafting stories)
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - drafted: Story file created in stories folder
+#   - ready-for-dev: Draft approved and story context created
+#   - in-progress: Developer actively working on implementation
+#   - review: Under SM review (via code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - completed: Retrospective has been done
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epics should be 'contexted' before stories can be 'drafted'
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically drafts next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', SM reviews, then Dev moves to 'done'
+
+generated: 2025-11-10
+project: tech-support
+project_key: tech-support
+tracking_system: file-system
+story_location: "{project-root}/docs/stories"
+
+development_status:
+  epic-1: contexted
+  1-1-initializirovat-modulnyj-monolit-i-strukturu-repozitoriya: ready-for-review
+  1-2-nastroit-github-actions-ci-s-kachestvennym-shlyuzom: backlog
+  1-3-podgotovit-docker-compose-i-lokalnye-sredy: backlog
+  1-4-vklyuchit-nablyudaemost-i-strukturirovannoe-logirovanie: backlog
+  1-5-nastroit-bazovuyu-bezopasnost-i-upravlenie-sekretami: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-self-registration-s-politikoj-parolej: backlog
+  2-2-email-verification-servis: backlog
+  2-3-approve-reject-zayavok-administratorom: backlog
+  2-4-rbac-abac-i-upravlenie-rolyami: backlog
+  2-5-obnovlenie-profilya-polzovatelya: backlog
+  2-6-smena-parolya-s-istoriej-i-blokirovkoj: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-sozdanie-tiketa-s-validaciej-i-avtoprisvoeeniem: backlog
+  3-2-prosmotr-spiska-tiketov-s-filtrami-i-poiskom: backlog
+  3-3-prosmotr-detalej-tiketa-i-istorii: backlog
+  3-4-dobavlenie-kommentariev-k-tiketu: backlog
+  3-5-naznachenie-tiketa-i-upravlenie-statusami: backlog
+  3-6-avtomaticheskoe-zakrytie-i-pereotkrytie-tiketov: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-upravlenie-ocheredyu-tiketov-i-prioritezaciya: backlog
+  4-2-samo-naznachenie-tiketa-agentom: backlog
+  4-3-rule-engine-dlya-sla-i-avtomaticheskih-eskalacij: backlog
+  4-4-dashbord-sla-breach-i-workload-insights: backlog
+  4-5-integraciya-raspisaniya-smen-i-kalendarya-otpuskov: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-postroit-worm-audit-pipeline: backlog
+  5-2-retention-i-legal-hold-politiki: backlog
+  5-3-audit-viewer-api-i-rbac-filtraciya: backlog
+  5-4-monitoring-celostnosti-audita: backlog
+  5-5-gdpr-subject-access-i-erasure-tooling: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-telegram-bot-integraciya-dlya-kritichnyh-uvedomlenij: backlog
+  6-2-email-fallback-i-shablony-uvedomlenij: backlog
+  6-3-upravlenie-predpochteniyami-i-myuting-kanalov: backlog
+  6-4-ochered-dostavki-i-retry-mehanizm: backlog
+  6-5-health-monitoring-i-alerting: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-analiticheskij-sloj-i-etl: backlog
+  7-2-dashboard-ticket-volume-da-sla-performance: backlog
+  7-3-agent-workload-da-productivity-insights: backlog
+  7-4-sla-breach-forecasting-mvp: backlog
+  7-5-downloadable-compliance-da-kpi-reports: backlog
+  epic-7-retrospective: optional

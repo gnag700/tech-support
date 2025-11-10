@@ -1,0 +1,1183 @@
+openapi: 3.0.3
+info:
+  title: Tech-Support Helpdesk API
+  description: |
+    REST API для системы технической поддержки ЦРБ Марьина Горка.
+    
+    ## Архитектура
+    - **Backend:** Spring Boot 3.5.7 + Spring Modulith 2.0 RC1
+    - **Authentication:** JWT Bearer tokens + httpOnly refresh cookies
+    - **Data Format:** JSON with snake_case naming
+    
+    ## Базовые концепции
+    - Все timestamps в UTC (ISO 8601 format)
+    - Pagination: zero-based (page=0)
+    - Rate limiting: 100 requests/minute per user
+    
+    ## Аутентификация
+    Используйте JWT токен в заголовке:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+    
+    Refresh токен хранится в httpOnly cookie и обновляется автоматически.
+    
+  version: 1.0.0
+  contact:
+    name: Tech-Support Team
+    email: support@crb-mh.by
+  license:
+    name: Proprietary
+    url: https://crb-mh.by/license
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development
+  - url: https://staging.techsupport.crb-mh.by/api/v1
+    description: Staging environment
+  - url: https://techsupport.crb-mh.by/api/v1
+    description: Production environment
+
+tags:
+  - name: Authentication
+    description: Регистрация, вход, управление токенами
+  - name: Tickets
+    description: Управление тикетами (CRUD, статусы, комментарии)
+  - name: Users
+    description: Управление пользователями и профилями
+  - name: Audit
+    description: Просмотр audit logs (Admin, Support)
+  - name: Analytics
+    description: Метрики и отчёты (Admin, Support view-only)
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ==================== AUTHENTICATION ====================
+  
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Регистрация нового пользователя
+      description: |
+        Создаёт аккаунт со статусом PENDING_APPROVAL. 
+        Требуется одобрение администратора перед активацией.
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Регистрация успешна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              example:
+                data:
+                  user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  email: "ivanov@crb.by"
+                  full_name: "Иван Иванов"
+                  status: "PENDING_APPROVAL"
+                metadata:
+                  timestamp: "2025-11-10T12:00:00Z"
+                  request_id: "req-12345"
+                error: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Вход в систему
+      description: Аутентификация пользователя и получение JWT токенов
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Успешная аутентификация
+          headers:
+            Set-Cookie:
+              description: Refresh token (httpOnly, secure)
+              schema:
+                type: string
+                example: "refresh_token=<token>; HttpOnly; Secure; SameSite=Strict; Max-Age=604800"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              example:
+                data:
+                  access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  token_type: "Bearer"
+                  expires_in: 900
+                  user:
+                    user_id: "a1b2c3d4"
+                    email: "ivanov@crb.by"
+                    full_name: "Иван Иванов"
+                    role: "ROLE_EMPLOYEE"
+                metadata:
+                  timestamp: "2025-11-10T12:00:00Z"
+                  request_id: "req-12346"
+                error: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Аккаунт не активирован или заблокирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Обновление access token
+      description: |
+        Использует refresh token из httpOnly cookie для получения нового access token.
+        Реализует Refresh Token Rotation - старый refresh token инвалидируется.
+      operationId: refreshToken
+      security: []
+      parameters:
+        - in: cookie
+          name: refresh_token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Новый access token выдан
+          headers:
+            Set-Cookie:
+              description: Новый refresh token
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Выход из системы
+      description: Инвалидирует refresh token и удаляет cookie
+      operationId: logoutUser
+      responses:
+        '204':
+          description: Успешный выход
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==================== TICKETS ====================
+  
+  /tickets:
+    get:
+      tags:
+        - Tickets
+      summary: Получить список тикетов
+      description: |
+        Возвращает тикеты с учётом роли:
+        - Employee: только свои тикеты
+        - Support: назначенные + unassigned
+        - Admin: все тикеты
+      operationId: listTickets
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED]
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [P1, P2, P3]
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [HARDWARE, SOFTWARE, NETWORK, ACCESS, OTHER]
+        - name: assigned_to
+          in: query
+          description: UUID пользователя (Support/Admin only)
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          description: Full-text search по title и description
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список тикетов
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PagedTickets'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Tickets
+      summary: Создать новый тикет
+      description: Доступно всем ролям
+      operationId: createTicket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+      responses:
+        '201':
+          description: Тикет создан
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Ticket'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tickets/{ticketId}:
+    get:
+      tags:
+        - Tickets
+      summary: Получить детали тикета
+      operationId: getTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketIdParam'
+      responses:
+        '200':
+          description: Детали тикета
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Ticket'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Tickets
+      summary: Обновить тикет (частично)
+      description: |
+        Support: может обновлять тикеты, назначенные на себя
+        Admin: может обновлять любые тикеты
+      operationId: updateTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketRequest'
+      responses:
+        '200':
+          description: Тикет обновлён
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Ticket'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tickets/{ticketId}/comments:
+    get:
+      tags:
+        - Tickets
+      summary: Получить комментарии тикета
+      operationId: getTicketComments
+      parameters:
+        - $ref: '#/components/parameters/TicketIdParam'
+      responses:
+        '200':
+          description: Список комментариев
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TicketComment'
+
+    post:
+      tags:
+        - Tickets
+      summary: Добавить комментарий
+      description: Employee может комментировать свои тикеты, Support/Admin - любые
+      operationId: addComment
+      parameters:
+        - $ref: '#/components/parameters/TicketIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 5000
+                internal:
+                  type: boolean
+                  default: false
+                  description: Внутренний комментарий (видно только Support/Admin)
+      responses:
+        '201':
+          description: Комментарий добавлен
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TicketComment'
+
+  /tickets/{ticketId}/assign:
+    post:
+      tags:
+        - Tickets
+      summary: Назначить тикет на Support Agent
+      description: |
+        Support: может назначить на себя (self-assignment)
+        Admin: может назначить на любого Support Agent
+      operationId: assignTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketIdParam'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assigned_to_user_id:
+                  type: string
+                  format: uuid
+                  description: Если не указан, назначается на текущего пользователя
+      responses:
+        '200':
+          description: Тикет назначен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # ==================== USERS ====================
+  
+  /users/me:
+    get:
+      tags:
+        - Users
+      summary: Получить свой профиль
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Профиль пользователя
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+
+    patch:
+      tags:
+        - Users
+      summary: Обновить свой профиль
+      operationId: updateCurrentUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Профиль обновлён
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+
+  /users/me/password:
+    put:
+      tags:
+        - Users
+      summary: Изменить пароль
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Пароль изменён
+        '400':
+          description: Неверный текущий пароль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users:
+    get:
+      tags:
+        - Users
+      summary: Получить список пользователей
+      description: Доступно только Admin
+      operationId: listUsers
+      security:
+        - BearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [ROLE_EMPLOYEE, ROLE_SUPPORT, ROLE_ADMIN]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING_APPROVAL, ACTIVE, SUSPENDED]
+      responses:
+        '200':
+          description: Список пользователей
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PagedUsers'
+
+  /users/{userId}/approve:
+    post:
+      tags:
+        - Users
+      summary: Одобрить регистрацию
+      description: Активирует аккаунт со статусом PENDING_APPROVAL
+      operationId: approveUser
+      security:
+        - BearerAuth: [ROLE_ADMIN]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Пользователь одобрен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /users/{userId}/role:
+    put:
+      tags:
+        - Users
+      summary: Изменить роль пользователя
+      description: Доступно только Admin
+      operationId: changeUserRole
+      security:
+        - BearerAuth: [ROLE_ADMIN]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - role
+              properties:
+                role:
+                  type: string
+                  enum: [ROLE_EMPLOYEE, ROLE_SUPPORT, ROLE_ADMIN]
+      responses:
+        '200':
+          description: Роль изменена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # ==================== AUDIT ====================
+  
+  /audit-logs:
+    get:
+      tags:
+        - Audit
+      summary: Получить audit logs
+      description: |
+        Support: видит только свои действия
+        Admin: видит все логи
+      operationId: getAuditLogs
+      security:
+        - BearerAuth: [ROLE_SUPPORT, ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [TICKET_CREATED, TICKET_UPDATED, USER_APPROVED, ROLE_CHANGED]
+        - name: user_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          content:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/AuditLog'
+                          page:
+                            type: integer
+                          size:
+                            type: integer
+                          total_elements:
+                            type: integer
+
+  # ==================== ANALYTICS ====================
+  
+  /analytics/dashboard:
+    get:
+      tags:
+        - Analytics
+      summary: Получить метрики дашборда
+      description: Support - view only, Admin - полный доступ
+      operationId: getDashboardMetrics
+      security:
+        - BearerAuth: [ROLE_SUPPORT, ROLE_ADMIN]
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [today, week, month, quarter]
+            default: week
+      responses:
+        '200':
+          description: Метрики дашборда
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DashboardMetrics'
+
+# ==================== COMPONENTS ====================
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: Номер страницы (zero-based)
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+    SizeParam:
+      name: size
+      in: query
+      description: Количество элементов на странице
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    SortParam:
+      name: sort
+      in: query
+      description: Сортировка (формат field,direction)
+      schema:
+        type: string
+        example: "created_at,desc"
+
+    TicketIdParam:
+      name: ticketId
+      in: path
+      required: true
+      description: UUID тикета
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    # ========== API Response Wrappers ==========
+    
+    ApiResponse:
+      type: object
+      required:
+        - data
+        - metadata
+        - error
+      properties:
+        data:
+          type: object
+          nullable: true
+        metadata:
+          $ref: '#/components/schemas/ResponseMetadata'
+        error:
+          nullable: true
+          oneOf:
+            - $ref: '#/components/schemas/ErrorDetails'
+
+    ResponseMetadata:
+      type: object
+      required:
+        - timestamp
+        - request_id
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-11-10T12:00:00Z"
+        request_id:
+          type: string
+          format: uuid
+          example: "req-a1b2c3d4"
+
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              nullable: true
+            error:
+              $ref: '#/components/schemas/ErrorDetails'
+
+    ErrorDetails:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: "TICKET_NOT_FOUND"
+        message:
+          type: string
+          example: "Ticket with ID 12345 not found"
+        details:
+          type: object
+          additionalProperties: true
+        field_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      properties:
+        field:
+          type: string
+          example: "email"
+        message:
+          type: string
+          example: "Invalid email format"
+
+    # ========== Authentication ==========
+    
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - full_name
+        - department
+      properties:
+        email:
+          type: string
+          format: email
+          example: "ivanov@crb.by"
+        password:
+          type: string
+          format: password
+          minLength: 12
+          pattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{12,}$'
+          example: "SecureP@ss123"
+        full_name:
+          type: string
+          minLength: 2
+          maxLength: 200
+          example: "Иван Иванов"
+        department:
+          type: string
+          minLength: 2
+          maxLength: 100
+          example: "Терапия"
+        location:
+          type: string
+          maxLength: 100
+          example: "Корпус А"
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    # ========== Tickets ==========
+    
+    Ticket:
+      type: object
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 5
+          maxLength: 200
+        description:
+          type: string
+          minLength: 10
+          maxLength: 5000
+        category:
+          type: string
+          enum: [HARDWARE, SOFTWARE, NETWORK, ACCESS, OTHER]
+        priority:
+          type: string
+          enum: [P1, P2, P3]
+        status:
+          type: string
+          enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED]
+        created_by:
+          $ref: '#/components/schemas/UserSummary'
+        assigned_to:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/UserSummary'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateTicketRequest:
+      type: object
+      required:
+        - title
+        - description
+        - category
+      properties:
+        title:
+          type: string
+          minLength: 5
+          maxLength: 200
+        description:
+          type: string
+          minLength: 10
+          maxLength: 5000
+        category:
+          type: string
+          enum: [HARDWARE, SOFTWARE, NETWORK, ACCESS, OTHER]
+        priority:
+          type: string
+          enum: [P1, P2, P3]
+          default: P3
+
+    UpdateTicketRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED]
+        priority:
+          type: string
+          enum: [P1, P2, P3]
+
+    TicketComment:
+      type: object
+      properties:
+        comment_id:
+          type: string
+          format: uuid
+        ticket_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        internal:
+          type: boolean
+          description: Внутренний комментарий (видно только Support/Admin)
+        author:
+          $ref: '#/components/schemas/UserSummary'
+        created_at:
+          type: string
+          format: date-time
+
+    PagedTickets:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ticket'
+        page:
+          type: integer
+        size:
+          type: integer
+        total_elements:
+          type: integer
+        total_pages:
+          type: integer
+
+    # ========== Users ==========
+    
+    User:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        department:
+          type: string
+        location:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [ROLE_EMPLOYEE, ROLE_SUPPORT, ROLE_ADMIN]
+        status:
+          type: string
+          enum: [PENDING_APPROVAL, ACTIVE, SUSPENDED]
+        created_at:
+          type: string
+          format: date-time
+        last_login_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    UserSummary:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          minLength: 2
+          maxLength: 200
+        department:
+          type: string
+          maxLength: 100
+        location:
+          type: string
+          maxLength: 100
+        phone:
+          type: string
+          maxLength: 20
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+          minLength: 12
+          pattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{12,}$'
+
+    PagedUsers:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        page:
+          type: integer
+        size:
+          type: integer
+        total_elements:
+          type: integer
+
+    # ========== Audit ==========
+    
+    AuditLog:
+      type: object
+      properties:
+        audit_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          enum: [TICKET_CREATED, TICKET_UPDATED, TICKET_CLOSED, USER_APPROVED, ROLE_CHANGED, LOGIN_SUCCESS, LOGIN_FAILED]
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        entity_type:
+          type: string
+          enum: [TICKET, USER, AUTH_TOKEN]
+        entity_id:
+          type: string
+          format: uuid
+        old_value:
+          type: object
+          nullable: true
+        new_value:
+          type: object
+          nullable: true
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    # ========== Analytics ==========
+    
+    DashboardMetrics:
+      type: object
+      properties:
+        total_tickets:
+          type: integer
+        open_tickets:
+          type: integer
+        in_progress_tickets:
+          type: integer
+        resolved_tickets:
+          type: integer
+        avg_first_response_time_minutes:
+          type: number
+          format: float
+        avg_resolution_time_hours:
+          type: number
+          format: float
+        tickets_by_category:
+          type: object
+          additionalProperties:
+            type: integer
+        tickets_by_priority:
+          type: object
+          additionalProperties:
+            type: integer
+
+  responses:
+    BadRequest:
+      description: Неверный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            data: null
+            metadata:
+              timestamp: "2025-11-10T12:00:00Z"
+              request_id: "req-12345"
+            error:
+              code: "VALIDATION_ERROR"
+              message: "Invalid request parameters"
+              field_errors:
+                - field: "email"
+                  message: "Invalid email format"
+
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            data: null
+            error:
+              code: "UNAUTHORIZED"
+              message: "Authentication required"
+
+    Forbidden:
+      description: Доступ запрещён
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            data: null
+            error:
+              code: "FORBIDDEN"
+              message: "Insufficient permissions"
+
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            data: null
+            error:
+              code: "NOT_FOUND"
+              message: "Resource not found"
+
+    Conflict:
+      description: Конфликт (например, email уже существует)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            data: null
+            error:
+              code: "EMAIL_ALREADY_EXISTS"
+              message: "User with this email already exists"

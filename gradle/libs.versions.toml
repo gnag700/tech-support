@@ -1,0 +1,64 @@
+[versions]
+# RC версии для Spring Boot 4.0 и Spring Modulith 2.0
+springBoot = "4.0.0-RC1"
+springModulith = "2.0.0-RC1"
+java = "21"
+
+# Database
+postgresql = "42.7.4"
+flyway = "11.1.0"
+
+# Testing
+junit = "5.11.3"
+testcontainers = "1.20.4"
+
+# Observability
+micrometer = "1.14.2"
+logstash = "8.0"
+
+# Build plugins
+spotless = "6.25.0"
+jacoco = "0.8.12"
+
+[libraries]
+# Spring Boot
+spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
+spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
+spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+
+# Spring Modulith - используем BOM для управления версиями
+spring-modulith-bom = { module = "org.springframework.modulith:spring-modulith-bom", version.ref = "springModulith" }
+spring-modulith-starter-core = { module = "org.springframework.modulith:spring-modulith-starter-core" }
+spring-modulith-events-jdbc = { module = "org.springframework.modulith:spring-modulith-events-jdbc" }
+spring-modulith-starter-jpa = { module = "org.springframework.modulith:spring-modulith-starter-jpa" }
+spring-modulith-starter-test = { module = "org.springframework.modulith:spring-modulith-starter-test" }
+spring-modulith-observability = { module = "org.springframework.modulith:spring-modulith-observability" }
+spring-modulith-actuator = { module = "org.springframework.modulith:spring-modulith-actuator" }
+
+# Database
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+
+# Testing
+testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:postgresql" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter" }
+
+# Observability
+micrometer-registry-prometheus = { module = "io.micrometer:micrometer-registry-prometheus", version.ref = "micrometer" }
+logstash-logback-encoder = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstash" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
+spring-dependency-management = { id = "io.spring.dependency-management", version = "1.1.7" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+
+[bundles]
+spring-modulith = ["spring-modulith-starter-core", "spring-modulith-events-jdbc", "spring-modulith-starter-jpa"]
+flyway = ["flyway-core", "flyway-database-postgresql"]
+testcontainers = ["testcontainers-postgresql", "testcontainers-junit-jupiter"]
+observability = ["micrometer-registry-prometheus", "logstash-logback-encoder"]

@@ -1,0 +1,115 @@
+plugins {
+  id 'java'
+  alias(libs.plugins.spring.boot)
+  alias(libs.plugins.spring.dependency.management)
+  alias(libs.plugins.spotless)
+  id 'jacoco'
+  id 'org.flywaydb.flyway' version '11.1.0'
+}
+
+group = 'com.techsupport'
+version = '0.0.1-SNAPSHOT'
+
+java {
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(21)
+  }
+}
+
+configurations {
+  compileOnly {
+    extendsFrom annotationProcessor
+  }
+}
+
+repositories {
+  mavenCentral()
+  // КРИТИЧЕСКИ ВАЖНО: Spring Milestone репозиторий для RC версий
+  maven { url 'https://repo.spring.io/milestone' }
+}
+
+dependencyManagement {
+  imports {
+    // Используем BOM для управления версиями Spring Modulith
+    mavenBom libs.spring.modulith.bom.get().toString()
+  }
+}
+
+dependencies {
+  // Spring Boot starters
+  implementation libs.spring.boot.starter.web
+  implementation libs.spring.boot.starter.data.jpa
+  implementation libs.spring.boot.starter.security
+  implementation libs.spring.boot.starter.validation
+  implementation libs.spring.boot.starter.actuator
+
+  // Spring Modulith
+  implementation libs.bundles.spring.modulith
+  
+  // Spring Modulith - runtime зависимости для observability и actuator
+  runtimeOnly libs.spring.modulith.observability
+  runtimeOnly libs.spring.modulith.actuator
+
+  // Database
+  runtimeOnly libs.postgresql
+  implementation libs.bundles.flyway
+
+  // Observability
+  implementation libs.bundles.observability
+
+  // Testing
+  testImplementation libs.spring.boot.starter.test
+  testImplementation libs.spring.modulith.starter.test
+  testImplementation(platform(libs.testcontainers.bom))
+  testImplementation libs.bundles.testcontainers
+}
+
+tasks.named('test') {
+  useJUnitPlatform()
+  finalizedBy jacocoTestReport
+}
+
+jacoco {
+  toolVersion = "0.8.12"
+}
+
+jacocoTestReport {
+  dependsOn test
+  reports {
+    xml.required = true
+    html.required = true
+  }
+  afterEvaluate {
+    classDirectories.setFrom(files(classDirectories.files.collect {
+      fileTree(dir: it, exclude: [
+        '**/TechSupportApplication.class'
+      ])
+    }))
+  }
+}
+
+jacocoTestCoverageVerification {
+  violationRules {
+    rule {
+      limit {
+        minimum = 0.80
+      }
+    }
+  }
+}
+
+spotless {
+  java {
+    googleJavaFormat('1.24.0')
+    removeUnusedImports()
+    trimTrailingWhitespace()
+    endWithNewline()
+  }
+}
+
+flyway {
+  url = project.findProperty('flyway.url') ?: 'jdbc:postgresql://localhost:5432/techsupport'
+  user = project.findProperty('flyway.user') ?: 'techsupport_user'
+  password = project.findProperty('flyway.password') ?: 'password'
+  locations = ['classpath:db/migration']
+}
